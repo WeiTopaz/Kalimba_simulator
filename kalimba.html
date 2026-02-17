@@ -85,7 +85,7 @@
         box-shadow: 0 5px 10px rgba(0,0,0,0.3);
     }
 
-    /* 音孔 (笑臉) */
+    /* 音孔 (純圓孔) */
     .sound-hole {
         position: absolute;
         bottom: 25%;
@@ -95,31 +95,7 @@
         border-radius: 50%;
         box-shadow: inset 2px 4px 10px rgba(0,0,0,0.5);
         z-index: 1;
-    }
-
-    /* 笑臉眼睛 */
-    .sound-hole::before {
-        content: '•  •';
-        position: absolute;
-        top: 25%;
-        width: 100%;
-        text-align: center;
-        color: white;
-        font-size: clamp(20px, 4vw, 30px);
-        letter-spacing: clamp(15px, 3vw, 25px);
-        font-family: monospace;
-    }
-
-    /* 笑臉嘴巴 */
-    .sound-hole::after {
-        content: '';
-        position: absolute;
-        top: 45%;
-        left: 25%;
-        width: 50%;
-        height: 25%;
-        border-bottom: clamp(3px, 0.5vw, 4px) solid white;
-        border-radius: 50%;
+        touch-action: none;
     }
 
     /* 琴鍵容器 */
@@ -171,12 +147,57 @@
     .dot {
         font-size: clamp(12px, 2.5vw, 16px);
         font-weight: bold;
+        min-height: 1em;
+    }
+
+    .dot-top {
         margin-bottom: -2px;
+    }
+
+    .dot-bottom {
+        margin-top: -2px;
     }
 
     .num {
         font-size: clamp(14px, 3vw, 18px);
         font-weight: 600;
+    }
+
+    .controls-panel {
+        position: absolute;
+        left: 50%;
+        bottom: 16px;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 10px;
+        align-items: flex-end;
+        padding: 10px 12px;
+        border-radius: 12px;
+        background: rgba(0,0,0,0.3);
+        z-index: 20;
+    }
+
+    .control-group {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 92px;
+        color: #fff;
+        font-size: 12px;
+    }
+
+    .control-group select,
+    .control-group input {
+        border: 0;
+        border-radius: 6px;
+        padding: 4px 6px;
+        font-size: 13px;
+    }
+
+    #release-value {
+        text-align: right;
+        font-size: 11px;
+        opacity: 0.9;
     }
 
     /* 啟動遮罩 */
@@ -210,115 +231,225 @@
 
         <div class="keys-container" id="keys">
             </div>
+
+        <div class="controls-panel">
+            <div class="control-group">
+                <label for="lowest-note">最低音</label>
+                <select id="lowest-note"></select>
+            </div>
+            <div class="control-group">
+                <label for="highest-note">最高音</label>
+                <select id="highest-note"></select>
+            </div>
+            <div class="control-group">
+                <label for="release-time">Release</label>
+                <input id="release-time" type="range" min="1" max="4" step="0.5" value="2.5">
+                <div id="release-value">2.5s</div>
+            </div>
+        </div>
         
         <div style="position:absolute; bottom:30px; right:30px; font-size:30px; color:white; opacity:0.8;">≡</div>
         <div style="position:absolute; bottom:30px; left:30px; width:20px; height:20px; background:white; border-radius:50%; opacity:0.8;"></div>
     </div>
 
     <script>
-        // 音訊處理
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         let ctx = new AudioContext();
 
-        function playTone(freq) {
-            if (ctx.state === 'suspended') ctx.resume();
-            
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
+        const masterGain = ctx.createGain();
+        const occlusionFilter = ctx.createBiquadFilter();
+        const occlusionGain = ctx.createGain();
+        masterGain.gain.value = 1;
+        occlusionFilter.type = 'lowpass';
+        occlusionFilter.frequency.setValueAtTime(7000, ctx.currentTime);
+        occlusionFilter.Q.value = 0.7;
+        occlusionGain.gain.setValueAtTime(1, ctx.currentTime);
+        masterGain.connect(occlusionFilter);
+        occlusionFilter.connect(occlusionGain);
+        occlusionGain.connect(ctx.destination);
 
-            osc.type = 'sine'; // 正弦波模擬金屬聲
-            osc.frequency.setValueAtTime(freq, ctx.currentTime);
+        let releaseTime = 2.5;
 
-            // 聲音包絡 (ADSR): 快速起音，長延音，避免爆音
-            const now = ctx.currentTime;
-            gain.gain.setValueAtTime(0, now);
-            gain.gain.linearRampToValueAtTime(0.3, now + 0.005); // 降低音量避免雜音
-            gain.gain.exponentialRampToValueAtTime(0.15, now + 0.1); // 快速衰減到持續音量
-            gain.gain.exponentialRampToValueAtTime(0.001, now + 2.5); // 平滑淡出
+        const majorOffsets = [0, 2, 4, 5, 7, 9, 11];
+        const noteNumbers = ["1", "2", "3", "4", "5", "6", "7"];
+        const octaveLevels = [-1, 0, 1, 2];
+        const notes = [];
 
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-
-            osc.start(now);
-            osc.stop(now + 2.5);
-        }
-
-        // 17音 標準排列數據 (從左到右)
-        // 格式: { n: 簡譜數字, d: 點數(0=中, 1=高, 2=倍高), f: 頻率 }
-        const notes = [
-            {n:"2", d:2, f:1174.66}, // D6
-            {n:"7", d:1, f:987.77},  // B5
-            {n:"5", d:1, f:783.99},  // G5
-            {n:"3", d:1, f:659.25},  // E5
-            {n:"1", d:1, f:523.25},  // C5
-            {n:"6", d:0, f:440.00},  // A4
-            {n:"4", d:0, f:349.23},  // F4
-            {n:"2", d:0, f:293.66},  // D4
-            {n:"1", d:0, f:261.63},  // C4 (中央最長)
-            {n:"3", d:0, f:329.63},  // E4
-            {n:"5", d:0, f:392.00},  // G4
-            {n:"7", d:0, f:493.88},  // B4
-            {n:"2", d:1, f:587.33},  // D5
-            {n:"4", d:1, f:698.46},  // F5
-            {n:"6", d:1, f:880.00},  // A5
-            {n:"1", d:2, f:1046.50}, // C6
-            {n:"3", d:2, f:1318.51}  // E6
-        ];
+        const midiToFreq = (midi) => +(440 * Math.pow(2, (midi - 69) / 12)).toFixed(2);
+        octaveLevels.forEach((level) => {
+            const octave = 4 + level;
+            majorOffsets.forEach((offset, idx) => {
+                notes.push({
+                    n: noteNumbers[idx],
+                    d: level,
+                    f: midiToFreq((octave + 1) * 12 + offset)
+                });
+            });
+        });
 
         const container = document.getElementById('keys');
-        
-        // 中心索引是 8 (第9個鍵，最長的琴鍵)
-        const centerIndex = 8; 
-        
-        // 計算每個琴鍵相對於中心的長度比例
-        // 最長的琴鍵(中心)為 1.0，最短的琴鍵為 0.67 (即 2/3)
-        const lengthRatios = notes.map((note, index) => {
-            const dist = Math.abs(index - centerIndex);
-            // 從中心到邊緣共8個單位，每個單位減少 (1-0.67)/8 ≈ 0.041
-            const minRatio = 0.67; // 最短琴鍵是最長琴鍵的 2/3
-            return 1.0 - (dist * ((1.0 - minRatio) / 8));
-        });
+        const lowestSelect = document.getElementById('lowest-note');
+        const highestSelect = document.getElementById('highest-note');
+        const releaseInput = document.getElementById('release-time');
+        const releaseValue = document.getElementById('release-value');
+        const soundHole = document.querySelector('.sound-hole');
 
-        // 原本升八度Do(索引15)的長度比例
-        const targetRatio = lengthRatios[15]; // 約 0.71
-        
+        const defaultLowestIndex = notes.findIndex(note => note.n === "1" && note.d === 0);
+        const defaultHighestIndex = notes.findIndex(note => note.n === "3" && note.d === 2);
+        let lowestIndex = defaultLowestIndex;
+        let highestIndex = defaultHighestIndex;
+
+        const formatControlLabel = (note) => {
+            if (note.d < 0) return `${'˙'.repeat(-note.d)}${note.n}`;
+            if (note.d > 0) return `${note.n}${'˙'.repeat(note.d)}`;
+            return note.n;
+        };
+
+        const setSoundHoleOcclusion = (blocked) => {
+            const now = ctx.currentTime;
+            const targetFreq = blocked ? 700 : 7000;
+            const targetGain = blocked ? 0.45 : 1;
+            occlusionFilter.frequency.cancelScheduledValues(now);
+            occlusionGain.gain.cancelScheduledValues(now);
+            occlusionFilter.frequency.setTargetAtTime(targetFreq, now, 0.06);
+            occlusionGain.gain.setTargetAtTime(targetGain, now, 0.06);
+        };
+
+        function playTone(freq) {
+            if (ctx.state === 'suspended') ctx.resume();
+
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            const now = ctx.currentTime;
+
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, now);
+            gain.gain.setValueAtTime(0.0001, now);
+            gain.gain.linearRampToValueAtTime(0.3, now + 0.01);
+            gain.gain.exponentialRampToValueAtTime(0.15, now + 0.12);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + releaseTime);
+
+            osc.connect(gain);
+            gain.connect(masterGain);
+            osc.start(now);
+            osc.stop(now + releaseTime + 0.05);
+        }
+
+        const arrangeNotes = (rangeNotes) => rangeNotes
+            .map((note, seqIndex) => ({
+                ...note,
+                position: seqIndex === 0 ? 0 : (seqIndex % 2 === 1 ? -((seqIndex + 1) / 2) : (seqIndex / 2))
+            }))
+            .sort((a, b) => a.position - b.position);
+
+        function renderKeys() {
+            container.innerHTML = '';
+            const rangeNotes = notes.slice(lowestIndex, highestIndex + 1);
+            const arranged = arrangeNotes(rangeNotes);
+            const minRatio = 0.67;
+            const maxKeyHeight = 53;
+            const maxDist = arranged.reduce((max, note) => Math.max(max, Math.abs(note.position)), 0);
+
+            arranged.forEach((note) => {
+                const el = document.createElement('div');
+                el.className = 'key';
+                const dist = Math.abs(note.position);
+                const ratio = maxDist === 0 ? 1 : 1 - ((dist / maxDist) * (1 - minRatio));
+                el.style.height = `${(maxKeyHeight * ratio).toFixed(2)}%`;
+
+                const topDots = note.d > 0 ? '•'.repeat(note.d) : '&nbsp;';
+                const bottomDots = note.d < 0 ? '•'.repeat(-note.d) : '&nbsp;';
+                el.innerHTML = `
+                    <div class="label-group">
+                        <div class="dot dot-top">${topDots}</div>
+                        <div class="num">${note.n}</div>
+                        <div class="dot dot-bottom">${bottomDots}</div>
+                    </div>
+                `;
+
+                el.addEventListener('pointerdown', (e) => {
+                    e.preventDefault();
+                    playTone(note.f);
+                    el.classList.add('active');
+                    setTimeout(() => el.classList.remove('active'), 150);
+                });
+
+                container.appendChild(el);
+            });
+        }
+
         notes.forEach((note, index) => {
-            const el = document.createElement('div');
-            el.className = 'key';
-
-            // 將最長琴鍵設定為原本升八度Do的長度
-            // 原本: 最長75% * 1.0 = 75%, 升八度Do為 75% * 0.71 ≈ 53%
-            // 現在: 最長設為 53%, 其他按原比例縮放
-            const maxKeyHeight = 53; 
-            const height = maxKeyHeight * lengthRatios[index]; 
-            el.style.height = height + '%';
-
-            // 生成點點 HTML
-            let dotsHTML = '';
-            if (note.d === 1) dotsHTML = '•';
-            if (note.d === 2) dotsHTML = '••'; // 倍高音兩點
-
-            el.innerHTML = `
-                <div class="label-group">
-                    <div class="dot">${dotsHTML}</div>
-                    <div class="num">${note.n}</div>
-                </div>
-            `;
-
-            // 觸控事件處理 (Pointer Events 支援滑鼠與觸控)
-            const trigger = (e) => {
-                e.preventDefault(); // 防止滾動
-                playTone(note.f);
-                el.classList.add('active');
-                setTimeout(() => el.classList.remove('active'), 150);
-            };
-
-            el.addEventListener('pointerdown', trigger);
-
-            container.appendChild(el);
+            const label = formatControlLabel(note);
+            const lowOption = document.createElement('option');
+            lowOption.value = index;
+            lowOption.textContent = label;
+            const highOption = lowOption.cloneNode(true);
+            lowestSelect.appendChild(lowOption);
+            highestSelect.appendChild(highOption);
         });
 
-        // 移除遮罩
+        const syncRange = (changedBy) => {
+            if (highestIndex <= lowestIndex) {
+                if (changedBy === 'low') {
+                    if (lowestIndex >= notes.length - 1) {
+                        lowestIndex = notes.length - 2;
+                        highestIndex = notes.length - 1;
+                    } else {
+                        highestIndex = lowestIndex + 1;
+                    }
+                } else {
+                    if (highestIndex <= 0) {
+                        lowestIndex = 0;
+                        highestIndex = 1;
+                    } else {
+                        lowestIndex = highestIndex - 1;
+                    }
+                }
+            }
+            lowestSelect.value = String(lowestIndex);
+            highestSelect.value = String(highestIndex);
+        };
+
+        lowestSelect.value = String(lowestIndex);
+        highestSelect.value = String(highestIndex);
+        releaseInput.value = String(releaseTime);
+        releaseValue.textContent = `${releaseTime.toFixed(1)}s`;
+
+        lowestSelect.addEventListener('change', () => {
+            lowestIndex = Number(lowestSelect.value);
+            syncRange('low');
+            renderKeys();
+        });
+
+        highestSelect.addEventListener('change', () => {
+            highestIndex = Number(highestSelect.value);
+            syncRange('high');
+            renderKeys();
+        });
+
+        releaseInput.addEventListener('input', () => {
+            releaseTime = Number(releaseInput.value);
+            releaseValue.textContent = `${releaseTime.toFixed(1)}s`;
+        });
+
+        soundHole.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            if (ctx.state === 'suspended') ctx.resume();
+            setSoundHoleOcclusion(true);
+            if (soundHole.setPointerCapture) soundHole.setPointerCapture(e.pointerId);
+        });
+
+        soundHole.addEventListener('pointerup', (e) => {
+            e.preventDefault();
+            setSoundHoleOcclusion(false);
+            if (soundHole.releasePointerCapture) soundHole.releasePointerCapture(e.pointerId);
+        });
+
+        soundHole.addEventListener('pointercancel', () => setSoundHoleOcclusion(false));
+        document.addEventListener('pointerup', () => setSoundHoleOcclusion(false));
+
+        renderKeys();
+
         document.getElementById('overlay').addEventListener('click', function() {
             if (ctx.state === 'suspended') ctx.resume();
             this.style.display = 'none';
