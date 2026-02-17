@@ -261,8 +261,8 @@
             </div>
             <div class="control-group">
                 <label for="loudness-balance">低音平衡</label>
-                <input id="loudness-balance" type="range" min="1" max="3" step="0.1" value="2">
-                <div id="loudness-balance-value">2.0x</div>
+                <input id="loudness-balance" type="range" min="1" max="20" step="1" value="5">
+                <div id="loudness-balance-value">5.0x</div>
             </div>
         </div>
         
@@ -287,7 +287,7 @@
         occlusionGain.connect(ctx.destination);
 
         let releaseTime = 2.5;
-        let loudnessBalance = 2;
+        let loudnessBalance = 5;
 
         const majorOffsets = [0, 2, 4, 5, 7, 9, 11];
         const noteNumbers = ["1", "2", "3", "4", "5", "6", "7"];
