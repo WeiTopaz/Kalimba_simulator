@@ -10,6 +10,9 @@
         --bg-color: #d4a574; 
         --key-light: #f0f0f0;
         --key-dark: #c0c0c0;
+        --app-height: 100vh;
+        --viewport-offset-bottom: 0px;
+        --controls-bottom-inset: calc(env(safe-area-inset-bottom, 0px) + var(--viewport-offset-bottom));
     }
 
     body {
@@ -18,7 +21,7 @@
         display: flex;
         justify-content: center;
         align-items: center;
-        height: 100vh;
+        height: var(--app-height);
         overflow: hidden;
         font-family: Arial, sans-serif;
         touch-action: none; /* 禁止手機預設手勢 */
@@ -30,7 +33,7 @@
     .kalimba-body {
         position: relative;
         width: 100vw;
-        height: 100vh;
+        height: var(--app-height);
         background: 
             repeating-linear-gradient(
                 90deg,
@@ -166,7 +169,7 @@
     .controls-panel {
         position: absolute;
         left: 50%;
-        bottom: 16px;
+        bottom: calc(16px + var(--controls-bottom-inset));
         transform: translateX(-50%);
         display: flex;
         gap: 10px;
@@ -194,7 +197,8 @@
         font-size: 13px;
     }
 
-    #release-value {
+    #release-value,
+    #loudness-balance-value {
         text-align: right;
         font-size: 11px;
         opacity: 0.9;
@@ -246,6 +250,11 @@
                 <input id="release-time" type="range" min="1" max="4" step="0.5" value="2.5">
                 <div id="release-value">2.5s</div>
             </div>
+            <div class="control-group">
+                <label for="loudness-balance">低音平衡</label>
+                <input id="loudness-balance" type="range" min="1" max="3" step="0.1" value="2">
+                <div id="loudness-balance-value">2.0x</div>
+            </div>
         </div>
         
         <div style="position:absolute; bottom:30px; right:30px; font-size:30px; color:white; opacity:0.8;">≡</div>
@@ -269,6 +278,7 @@
         occlusionGain.connect(ctx.destination);
 
         let releaseTime = 2.5;
+        let loudnessBalance = 2;
 
         const majorOffsets = [0, 2, 4, 5, 7, 9, 11];
         const noteNumbers = ["1", "2", "3", "4", "5", "6", "7"];
@@ -292,7 +302,10 @@
         const highestSelect = document.getElementById('highest-note');
         const releaseInput = document.getElementById('release-time');
         const releaseValue = document.getElementById('release-value');
+        const loudnessBalanceInput = document.getElementById('loudness-balance');
+        const loudnessBalanceValue = document.getElementById('loudness-balance-value');
         const soundHole = document.querySelector('.sound-hole');
+        const rootStyle = document.documentElement.style;
 
         const defaultLowestIndex = notes.findIndex(note => note.n === "1" && note.d === 0);
         const defaultHighestIndex = notes.findIndex(note => note.n === "3" && note.d === 2);
@@ -315,18 +328,34 @@
             occlusionGain.gain.setTargetAtTime(targetGain, now, 0.06);
         };
 
-        function playTone(freq) {
+        const updateViewportMetrics = () => {
+            const vv = window.visualViewport;
+            const visibleHeight = vv ? vv.height : window.innerHeight;
+            const viewportOffsetBottom = vv ? Math.max(0, window.innerHeight - (vv.height + vv.offsetTop)) : 0;
+            rootStyle.setProperty('--app-height', `${visibleHeight.toFixed(2)}px`);
+            rootStyle.setProperty('--viewport-offset-bottom', `${viewportOffsetBottom.toFixed(2)}px`);
+        };
+
+        const getBalancedGainScale = (rangeIndex, rangeLength) => {
+            if (rangeLength <= 1) return loudnessBalance;
+            const normalized = rangeIndex / (rangeLength - 1);
+            return 1 + ((loudnessBalance - 1) * (1 - normalized));
+        };
+
+        function playTone(freq, gainScale = 1) {
             if (ctx.state === 'suspended') ctx.resume();
 
             const osc = ctx.createOscillator();
             const gain = ctx.createGain();
             const now = ctx.currentTime;
+            const peakGain = 0.3 * gainScale;
+            const sustainGain = 0.15 * gainScale;
 
             osc.type = 'sine';
             osc.frequency.setValueAtTime(freq, now);
             gain.gain.setValueAtTime(0.0001, now);
-            gain.gain.linearRampToValueAtTime(0.3, now + 0.01);
-            gain.gain.exponentialRampToValueAtTime(0.15, now + 0.12);
+            gain.gain.linearRampToValueAtTime(peakGain, now + 0.01);
+            gain.gain.exponentialRampToValueAtTime(Math.max(0.001, sustainGain), now + 0.12);
             gain.gain.exponentialRampToValueAtTime(0.001, now + releaseTime);
 
             osc.connect(gain);
@@ -338,6 +367,7 @@
         const arrangeNotes = (rangeNotes) => rangeNotes
             .map((note, seqIndex) => ({
                 ...note,
+                rangeIndex: seqIndex,
                 position: seqIndex === 0 ? 0 : (seqIndex % 2 === 1 ? -((seqIndex + 1) / 2) : (seqIndex / 2))
             }))
             .sort((a, b) => a.position - b.position);
@@ -369,7 +399,7 @@
 
                 el.addEventListener('pointerdown', (e) => {
                     e.preventDefault();
-                    playTone(note.f);
+                    playTone(note.f, getBalancedGainScale(note.rangeIndex, rangeNotes.length));
                     el.classList.add('active');
                     setTimeout(() => el.classList.remove('active'), 150);
                 });
@@ -414,6 +444,16 @@
         highestSelect.value = String(highestIndex);
         releaseInput.value = String(releaseTime);
         releaseValue.textContent = `${releaseTime.toFixed(1)}s`;
+        loudnessBalanceInput.value = String(loudnessBalance);
+        loudnessBalanceValue.textContent = `${loudnessBalance.toFixed(1)}x`;
+
+        updateViewportMetrics();
+        window.addEventListener('resize', updateViewportMetrics);
+        window.addEventListener('orientationchange', updateViewportMetrics);
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', updateViewportMetrics);
+            window.visualViewport.addEventListener('scroll', updateViewportMetrics);
+        }
 
         lowestSelect.addEventListener('change', () => {
             lowestIndex = Number(lowestSelect.value);
@@ -430,6 +470,11 @@
         releaseInput.addEventListener('input', () => {
             releaseTime = Number(releaseInput.value);
             releaseValue.textContent = `${releaseTime.toFixed(1)}s`;
+        });
+
+        loudnessBalanceInput.addEventListener('input', () => {
+            loudnessBalance = Number(loudnessBalanceInput.value);
+            loudnessBalanceValue.textContent = `${loudnessBalance.toFixed(1)}x`;
         });
 
         soundHole.addEventListener('pointerdown', (e) => {
