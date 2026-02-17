@@ -261,7 +261,7 @@
             </div>
             <div class="control-group">
                 <label for="loudness-balance">低音平衡</label>
-                <input id="loudness-balance" type="range" min="1" max="20" step="1" value="5">
+                <input id="loudness-balance" type="range" min="1" max="10" step="0.1" value="5">
                 <div id="loudness-balance-value">5.0x</div>
             </div>
         </div>
@@ -275,14 +275,21 @@
         let ctx = new AudioContext();
 
         const masterGain = ctx.createGain();
+        const outputCompressor = ctx.createDynamicsCompressor();
         const occlusionFilter = ctx.createBiquadFilter();
         const occlusionGain = ctx.createGain();
         masterGain.gain.value = 1;
+        outputCompressor.threshold.value = -20;
+        outputCompressor.knee.value = 20;
+        outputCompressor.ratio.value = 4;
+        outputCompressor.attack.value = 0.002;
+        outputCompressor.release.value = 0.25;
         occlusionFilter.type = 'lowpass';
         occlusionFilter.frequency.setValueAtTime(7000, ctx.currentTime);
         occlusionFilter.Q.value = 0.7;
         occlusionGain.gain.setValueAtTime(1, ctx.currentTime);
-        masterGain.connect(occlusionFilter);
+        masterGain.connect(outputCompressor);
+        outputCompressor.connect(occlusionFilter);
         occlusionFilter.connect(occlusionGain);
         occlusionGain.connect(ctx.destination);
 
@@ -357,14 +364,31 @@
             return 1 + ((loudnessBalance - 1) * (1 - normalized));
         };
 
+        const minNoteFreq = Math.min(...notes.map(note => note.f));
+        const maxNoteFreq = Math.max(...notes.map(note => note.f));
+
+        const getFrequencyGainTrim = (freq) => {
+            const normalizedFreq = (freq - minNoteFreq) / (maxNoteFreq - minNoteFreq);
+            const clamped = Math.min(1, Math.max(0, normalizedFreq));
+            const smoothed = clamped * clamped * (3 - (2 * clamped));
+            return 0.58 + (0.37 * smoothed);
+        };
+
+        const getOptimizedGainScale = (gainScale, freq) => {
+            const effectiveScale = Math.max(1, gainScale);
+            const compressedScale = 1 + Math.log1p((effectiveScale - 1) * 1.6);
+            return compressedScale * getFrequencyGainTrim(freq);
+        };
+
         function playTone(freq, gainScale = 1) {
             if (ctx.state === 'suspended') ctx.resume();
 
             const osc = ctx.createOscillator();
             const gain = ctx.createGain();
             const now = ctx.currentTime;
-            const peakGain = 0.3 * gainScale;
-            const sustainGain = 0.15 * gainScale;
+            const normalizedGainScale = getOptimizedGainScale(gainScale, freq);
+            const peakGain = Math.min(0.72, 0.24 * normalizedGainScale);
+            const sustainGain = Math.min(0.36, 0.12 * normalizedGainScale);
 
             osc.type = 'sine';
             osc.frequency.setValueAtTime(freq, now);
