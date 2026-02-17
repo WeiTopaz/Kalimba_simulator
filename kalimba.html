@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Smile Kalimba 17</title>
+<style>
+    :root {
+        /* 木頭色調 */
+        --bg-color: #d4a574; 
+        --key-light: #f0f0f0;
+        --key-dark: #c0c0c0;
+    }
+
+    body {
+        margin: 0;
+        background-color: #333;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        overflow: hidden;
+        font-family: Arial, sans-serif;
+        touch-action: none; /* 禁止手機預設手勢 */
+        -webkit-user-select: none; /* 禁止選取 */
+        user-select: none;
+    }
+
+    /* 琴身 */
+    .kalimba-body {
+        position: relative;
+        width: 100vw;
+        height: 100vh;
+        background: 
+            repeating-linear-gradient(
+                90deg,
+                #c19a6b 0px,
+                #d4a574 2px,
+                #c19a6b 4px,
+                #b8956a 6px,
+                #c19a6b 8px
+            ),
+            linear-gradient(
+                180deg,
+                #b8956a 0%,
+                #d4a574 30%,
+                #c19a6b 70%,
+                #a0866f 100%
+            );
+        display: flex;
+        justify-content: center;
+        overflow: hidden;
+        box-shadow: 
+            inset 0 0 100px rgba(0,0,0,0.15),
+            inset 20px 0 60px rgba(0,0,0,0.1),
+            inset -20px 0 60px rgba(0,0,0,0.1);
+    }
+
+    /* 頂部枕木結構 */
+    .bridge-group {
+        position: absolute;
+        top: 0;
+        width: 100%;
+        height: 15%;
+        z-index: 5;
+    }
+    
+    .metal-bar {
+        position: absolute;
+        top: 40px;
+        left: 0;
+        width: 100%;
+        height: 15px;
+        background: #ccc;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    }
+
+    .wood-bridge {
+        position: absolute;
+        top: 60px;
+        left: 0;
+        width: 100%;
+        height: 25px;
+        background: #5e4020;
+        box-shadow: 0 5px 10px rgba(0,0,0,0.3);
+    }
+
+    /* 音孔 (笑臉) */
+    .sound-hole {
+        position: absolute;
+        bottom: 25%;
+        width: clamp(80px, 15vw, 120px);
+        height: clamp(80px, 15vw, 120px);
+        background-color: #000;
+        border-radius: 50%;
+        box-shadow: inset 2px 4px 10px rgba(0,0,0,0.5);
+        z-index: 1;
+    }
+
+    /* 笑臉眼睛 */
+    .sound-hole::before {
+        content: '•  •';
+        position: absolute;
+        top: 25%;
+        width: 100%;
+        text-align: center;
+        color: white;
+        font-size: clamp(20px, 4vw, 30px);
+        letter-spacing: clamp(15px, 3vw, 25px);
+        font-family: monospace;
+    }
+
+    /* 笑臉嘴巴 */
+    .sound-hole::after {
+        content: '';
+        position: absolute;
+        top: 45%;
+        left: 25%;
+        width: 50%;
+        height: 25%;
+        border-bottom: clamp(3px, 0.5vw, 4px) solid white;
+        border-radius: 50%;
+    }
+
+    /* 琴鍵容器 */
+    .keys-container {
+        position: absolute;
+        top: min(60px, 8vh); /* 從枕木下方開始，響應式調整 */
+        width: 96%;
+        height: calc(100% - min(60px, 8vh));
+        display: flex;
+        justify-content: space-between;
+        pointer-events: none; /* 讓點擊穿透到琴鍵本身 */
+        z-index: 10;
+    }
+
+    /* 單個琴鍵 */
+    .key {
+        position: relative;
+        flex: 1;
+        margin: 0 1px;
+        background: linear-gradient(180deg, #ddd 0%, #fff 60%, #ddd 100%);
+        border-radius: 0 0 10px 10px;
+        box-shadow: 2px 5px 5px rgba(0,0,0,0.2);
+        cursor: pointer;
+        pointer-events: auto;
+        transform-origin: top;
+        transition: transform 0.05s, background 0.1s;
+        
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+        align-items: center;
+        padding-bottom: 15px;
+    }
+
+    .key:active, .key.active {
+        transform: scaleY(0.98) translateY(2px);
+        background: #eee;
+    }
+
+    /* 音名標示 (數字與點) */
+    .label-group {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        color: #666;
+        line-height: 1.1;
+    }
+
+    .dot {
+        font-size: clamp(12px, 2.5vw, 16px);
+        font-weight: bold;
+        margin-bottom: -2px;
+    }
+
+    .num {
+        font-size: clamp(14px, 3vw, 18px);
+        font-weight: 600;
+    }
+
+    /* 啟動遮罩 */
+    #overlay {
+        position: fixed;
+        top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0,0,0,0.8);
+        color: white;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 999;
+    }
+</style>
+</head>
+<body>
+
+    <div id="overlay">
+        <h1>Kalimba</h1>
+        <p>點擊畫面開始 (Tap to Start)</p>
+    </div>
+
+    <div class="kalimba-body">
+        <div class="bridge-group">
+            <div class="metal-bar"></div>
+            <div class="wood-bridge"></div>
+        </div>
+        
+        <div class="sound-hole"></div>
+
+        <div class="keys-container" id="keys">
+            </div>
+        
+        <div style="position:absolute; bottom:30px; right:30px; font-size:30px; color:white; opacity:0.8;">≡</div>
+        <div style="position:absolute; bottom:30px; left:30px; width:20px; height:20px; background:white; border-radius:50%; opacity:0.8;"></div>
+    </div>
+
+    <script>
+        // 音訊處理
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        let ctx = new AudioContext();
+
+        function playTone(freq) {
+            if (ctx.state === 'suspended') ctx.resume();
+            
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+
+            osc.type = 'sine'; // 正弦波模擬金屬聲
+            osc.frequency.setValueAtTime(freq, ctx.currentTime);
+
+            // 聲音包絡 (ADSR): 快速起音，長延音，避免爆音
+            const now = ctx.currentTime;
+            gain.gain.setValueAtTime(0, now);
+            gain.gain.linearRampToValueAtTime(0.3, now + 0.005); // 降低音量避免雜音
+            gain.gain.exponentialRampToValueAtTime(0.15, now + 0.1); // 快速衰減到持續音量
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 2.5); // 平滑淡出
+
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+
+            osc.start(now);
+            osc.stop(now + 2.5);
+        }
+
+        // 17音 標準排列數據 (從左到右)
+        // 格式: { n: 簡譜數字, d: 點數(0=中, 1=高, 2=倍高), f: 頻率 }
+        const notes = [
+            {n:"2", d:2, f:1174.66}, // D6
+            {n:"7", d:1, f:987.77},  // B5
+            {n:"5", d:1, f:783.99},  // G5
+            {n:"3", d:1, f:659.25},  // E5
+            {n:"1", d:1, f:523.25},  // C5
+            {n:"6", d:0, f:440.00},  // A4
+            {n:"4", d:0, f:349.23},  // F4
+            {n:"2", d:0, f:293.66},  // D4
+            {n:"1", d:0, f:261.63},  // C4 (中央最長)
+            {n:"3", d:0, f:329.63},  // E4
+            {n:"5", d:0, f:392.00},  // G4
+            {n:"7", d:0, f:493.88},  // B4
+            {n:"2", d:1, f:587.33},  // D5
+            {n:"4", d:1, f:698.46},  // F5
+            {n:"6", d:1, f:880.00},  // A5
+            {n:"1", d:2, f:1046.50}, // C6
+            {n:"3", d:2, f:1318.51}  // E6
+        ];
+
+        const container = document.getElementById('keys');
+        
+        // 中心索引是 8 (第9個鍵，最長的琴鍵)
+        const centerIndex = 8; 
+        
+        // 計算每個琴鍵相對於中心的長度比例
+        // 最長的琴鍵(中心)為 1.0，最短的琴鍵為 0.67 (即 2/3)
+        const lengthRatios = notes.map((note, index) => {
+            const dist = Math.abs(index - centerIndex);
+            // 從中心到邊緣共8個單位，每個單位減少 (1-0.67)/8 ≈ 0.041
+            const minRatio = 0.67; // 最短琴鍵是最長琴鍵的 2/3
+            return 1.0 - (dist * ((1.0 - minRatio) / 8));
+        });
+
+        // 原本升八度Do(索引15)的長度比例
+        const targetRatio = lengthRatios[15]; // 約 0.71
+        
+        notes.forEach((note, index) => {
+            const el = document.createElement('div');
+            el.className = 'key';
+
+            // 將最長琴鍵設定為原本升八度Do的長度
+            // 原本: 最長75% * 1.0 = 75%, 升八度Do為 75% * 0.71 ≈ 53%
+            // 現在: 最長設為 53%, 其他按原比例縮放
+            const maxKeyHeight = 53; 
+            const height = maxKeyHeight * lengthRatios[index]; 
+            el.style.height = height + '%';
+
+            // 生成點點 HTML
+            let dotsHTML = '';
+            if (note.d === 1) dotsHTML = '•';
+            if (note.d === 2) dotsHTML = '••'; // 倍高音兩點
+
+            el.innerHTML = `
+                <div class="label-group">
+                    <div class="dot">${dotsHTML}</div>
+                    <div class="num">${note.n}</div>
+                </div>
+            `;
+
+            // 觸控事件處理 (Pointer Events 支援滑鼠與觸控)
+            const trigger = (e) => {
+                e.preventDefault(); // 防止滾動
+                playTone(note.f);
+                el.classList.add('active');
+                setTimeout(() => el.classList.remove('active'), 150);
+            };
+
+            el.addEventListener('pointerdown', trigger);
+
+            container.appendChild(el);
+        });
+
+        // 移除遮罩
+        document.getElementById('overlay').addEventListener('click', function() {
+            if (ctx.state === 'suspended') ctx.resume();
+            this.style.display = 'none';
+        });
+
+    </script>
+</body>
+</html>
