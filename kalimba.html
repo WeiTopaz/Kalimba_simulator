@@ -175,35 +175,142 @@
         position: absolute;
         left: calc(8px + var(--controls-side-inset-left));
         right: calc(8px + var(--controls-side-inset-right));
-        bottom: calc(16px + var(--controls-bottom-inset));
-        display: flex;
-        flex-wrap: wrap;
-        justify-content: center;
+        bottom: calc(14px + var(--controls-bottom-inset));
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
         gap: 10px;
-        align-items: flex-end;
-        padding: 10px 12px;
+        align-items: end;
+        padding: 12px 56px 12px 12px;
         box-sizing: border-box;
-        border-radius: 12px;
-        background: rgba(0,0,0,0.3);
+        border-radius: 14px;
+        background: rgba(18,18,18,0.50);
+        -webkit-backdrop-filter: blur(10px);
+        backdrop-filter: blur(10px);
+        box-shadow: 0 6px 24px rgba(0,0,0,0.18);
         z-index: 20;
+        max-height: 40vh;
+        overflow: hidden;
+        opacity: 1;
+        transform: translateY(0);
+        transition: max-height .22s ease, opacity .18s ease, transform .22s ease, padding .22s ease;
+    }
+
+    .controls-panel.collapsed {
+        max-height: 0;
+        opacity: 0;
+        transform: translateY(12px);
+        padding-top: 0;
+        padding-bottom: 0;
+        pointer-events: none;
     }
 
     .control-group {
         display: flex;
         flex-direction: column;
-        gap: 4px;
-        flex: 0 1 92px;
-        min-width: 92px;
+        gap: 5px;
+        min-width: 0;
         color: #fff;
         font-size: 12px;
     }
 
     .control-group select,
     .control-group input {
+        width: 100%;
+        box-sizing: border-box;
         border: 0;
-        border-radius: 6px;
-        padding: 4px 6px;
-        font-size: 13px;
+        border-radius: 8px;
+        padding: 7px 8px;
+        font-size: 14px;
+        min-height: 36px;
+        background: rgba(255,255,255,.94);
+        color: #222;
+    }
+
+    .control-group input[type="range"] {
+        padding: 0;
+        min-height: 36px;
+        background: transparent;
+    }
+
+    .menu-toggle {
+        position: absolute;
+        right: calc(18px + var(--controls-side-inset-right));
+        bottom: calc(18px + var(--controls-bottom-inset));
+        width: 44px;
+        height: 44px;
+        border: 0;
+        border-radius: 50%;
+        background: rgba(20,20,20,.56);
+        color: white;
+        display: grid;
+        place-items: center;
+        font-size: 26px;
+        line-height: 1;
+        z-index: 30;
+        cursor: pointer;
+        -webkit-tap-highlight-color: transparent;
+        touch-action: manipulation;
+        box-shadow: 0 4px 14px rgba(0,0,0,.2);
+    }
+
+    .menu-toggle:active { transform: scale(.96); }
+
+    @media (max-width: 900px) {
+        .controls-panel {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px 10px;
+            padding-right: 58px;
+            max-height: 46vh;
+        }
+        .keys-container {
+            width: 98%;
+        }
+        .key {
+            margin: 0 .5px;
+            padding-bottom: clamp(8px, 2.2vh, 14px);
+        }
+    }
+
+    @media (max-width: 600px) {
+        .controls-panel {
+            left: calc(6px + var(--controls-side-inset-left));
+            right: calc(6px + var(--controls-side-inset-right));
+            bottom: calc(8px + var(--controls-bottom-inset));
+            grid-template-columns: 1fr 1fr;
+            padding: 10px 54px 10px 10px;
+            border-radius: 12px;
+        }
+        .control-group { font-size: 11px; }
+        .control-group select,
+        .control-group input {
+            font-size: 13px;
+            min-height: 34px;
+        }
+        .menu-toggle {
+            right: calc(12px + var(--controls-side-inset-right));
+            bottom: calc(12px + var(--controls-bottom-inset));
+            width: 42px;
+            height: 42px;
+            font-size: 24px;
+        }
+        .sound-hole {
+            bottom: 20%;
+            width: clamp(64px, 18vw, 96px);
+            height: clamp(64px, 18vw, 96px);
+        }
+    }
+
+    @media (max-height: 520px) and (orientation: landscape) {
+        .controls-panel {
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            max-height: 54vh;
+            padding-top: 8px;
+            padding-bottom: 8px;
+        }
+        .control-group { gap: 2px; }
+        .control-group select,
+        .control-group input { min-height: 30px; }
+        .sound-hole { bottom: 15%; }
     }
 
     #release-value,
@@ -245,7 +352,7 @@
         <div class="keys-container" id="keys">
             </div>
 
-        <div class="controls-panel">
+        <div class="controls-panel" id="controls-panel" aria-hidden="false">
             <div class="control-group">
                 <label for="lowest-note">最低音</label>
                 <select id="lowest-note"></select>
@@ -266,7 +373,7 @@
             </div>
         </div>
         
-        <div style="position:absolute; bottom:30px; right:30px; font-size:30px; color:white; opacity:0.8;">≡</div>
+        <button class="menu-toggle" id="menu-toggle" type="button" aria-label="收合設定" aria-controls="controls-panel" aria-expanded="true">≡</button>
         <div style="position:absolute; bottom:30px; left:30px; width:20px; height:20px; background:white; border-radius:50%; opacity:0.8;"></div>
     </div>
 
@@ -321,7 +428,34 @@
         const loudnessBalanceInput = document.getElementById('loudness-balance');
         const loudnessBalanceValue = document.getElementById('loudness-balance-value');
         const soundHole = document.querySelector('.sound-hole');
+        const controlsPanel = document.getElementById('controls-panel');
+        const menuToggle = document.getElementById('menu-toggle');
         const rootStyle = document.documentElement.style;
+
+
+        const setControlsCollapsed = (collapsed) => {
+            controlsPanel.classList.toggle('collapsed', collapsed);
+            controlsPanel.setAttribute('aria-hidden', String(collapsed));
+            menuToggle.setAttribute('aria-expanded', String(!collapsed));
+            menuToggle.setAttribute('aria-label', collapsed ? '展開設定' : '收合設定');
+        };
+
+        menuToggle.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setControlsCollapsed(!controlsPanel.classList.contains('collapsed'));
+        });
+
+        const applyResponsiveControlState = () => {
+            const isCompact = window.matchMedia('(max-width: 600px), (max-height: 520px)').matches;
+            if (!controlsPanel.dataset.userToggled) {
+                setControlsCollapsed(isCompact);
+            }
+        };
+
+        menuToggle.addEventListener('pointerdown', () => {
+            controlsPanel.dataset.userToggled = '1';
+        });
 
         const defaultLowestIndex = notes.findIndex(note => note.n === "1" && note.d === 0);
         const defaultHighestIndex = notes.findIndex(note => note.n === "3" && note.d === 2);
@@ -505,8 +639,15 @@
         loudnessBalanceValue.textContent = `${loudnessBalance.toFixed(1)}x`;
 
         updateViewportMetrics();
-        window.addEventListener('resize', updateViewportMetrics);
-        window.addEventListener('orientationchange', updateViewportMetrics);
+        applyResponsiveControlState();
+        window.addEventListener('resize', () => {
+            updateViewportMetrics();
+            applyResponsiveControlState();
+        });
+        window.addEventListener('orientationchange', () => {
+            updateViewportMetrics();
+            applyResponsiveControlState();
+        });
         if (window.visualViewport) {
             window.visualViewport.addEventListener('resize', updateViewportMetrics);
             window.visualViewport.addEventListener('scroll', updateViewportMetrics);
